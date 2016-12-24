@@ -33,7 +33,7 @@
     </script>
 </body>
 <script src="./lodash.min.js"></script>
-<script src="https://d3js.org/d3.v3.min.js"></script>
+<script src="https://d3js.org/d3.v3.js"></script>
 <script>
     stream_data = [];
     stream_offset = 0;
@@ -41,7 +41,7 @@
     total_data = [];
     //Very important to understand time - https://github.com/d3/d3-3.x-api-reference/blob/master/API-Reference.md#d3time-time
     timeFormat = d3.time.format('%Y-%m-%d %H:%M:%S UTC');
-    timeDomains = [{ 'Current' : 'hour'}, {'Last 4 hours' : 'hour2'}, {'Last 12 hours' : 'hour3'}, { 'Last 24 hours' : 'day'}]; //custom select feature {'Last Week' : 'week'}
+    timeDomains = [{ 'Current' : 'hour'}, { 'Last 24 hours' : 'day'}, {'Last Week' : 'week'}]; //custom select feature
     timeInMilli = {
         'sec': 1000*60, //extra info
         'hour':  1000*60*60*1,
@@ -55,6 +55,7 @@
     //START: Data Manipulation Part
     d3.json('../history.json', function(err, json) {
         if (err) window.alert('Data Invalid');
+        json = []
         historical_data = json; //static data
         total_data = JSON.parse(JSON.stringify(json));
         enhanceData(total_data);
@@ -64,7 +65,7 @@
         // console.log('historical data size - ', historical_data.length);
         d3.select('#debug_historical_size').text(historical_data.length);
     });
-updateApp();
+
     function updateApp() {
         var data_file = '../stream.json';
         console.log('called updateApp');
@@ -177,7 +178,7 @@ updateApp();
         var height2 = 10;
         var xScale2 = d3.time.scale().range([0, innerWidth]),
             xAxis2 = d3.svg.axis().scale(xScale2).orient("bottom").tickSize(-height2);
-            xScale2.domain(getTimeDomains(new Date(), 'day'));        
+            xScale2.domain(getTimeDomains(new Date(), 'week'));        
         var viewport = d3.svg.brush()
             .x(xScale2)
             // .extent([[0, 0], [innerWidth, height2]])
@@ -254,8 +255,6 @@ updateApp();
                 });
         })
         .on('mouseover', function() {
-            //extra???
-            //highlight which line we are on
             d3.select(".hover-line")
                 .style("opacity", "1");
         })
@@ -385,7 +384,7 @@ updateApp();
             .attr('id', 'brush_container')
             .append('svg')
                 .attr('width', width + 75)
-                .attr('height', 50)
+                .attr('height', 100)
             .append("g")
             .attr("class", "context")
             .attr("transform", "translate(" + margin.right + "," + (margin.top) + ")");
@@ -428,22 +427,19 @@ updateApp();
 
                     selectedTimeDomain = event.currentTarget.value;
                     xScale.domain(getTimeDomains(new Date()));
-                    // if (selectedTimeDomain == 'week') {
-                    //     xScale2.domain(getTimeDomains(new Date(), 'day'));
-                    // }
                     render();
                 })
         });
 
     var mentions; //global    
     var intensityByCategory;
-    var intensities = [];
     function render() {
         //tweets
         //new Date(d.harvested_at).getTime() > new Date('2016-12-06 04:31:42 UTC').getTime()
         mentions = total_data.filter(function(d) { 
             return d.event_impact_score['overall'] != null 
                 && d.article_sentiment != null 
+                && (_.get(d, 'entities[0].sector') == 'Finance' || _.get(d, 'entities[0].sector') == 'Energy')
                 && _.get(d, 'entities[0].sector') != 'n/a'
                 && _.get(d, 'entities[0].sector') != 'N/A'; // && d.article_type == 'tweet'; //&& (timeFormat.parse(d.harvested_at) > timeFormat.parse('2016-12-08 04:31:42 UTC'));
             // return true;
@@ -462,33 +458,24 @@ updateApp();
         }).forEach((d) => {
             d.radius = Math.sqrt(dotSizeScale(d.event_impact_score['overall']) / Math.PI);
         });
+
         //Generate volume intensity for different times
         var currentTime = new Date();
-        intensityByCategory = d3.nest()
-            .key((d) => {
-                return yValue(d);
-            })
-            .key((d) => {
-                return _.get(d, 'custom_time_offset'); //returns hour, day, week, etc.
-            })
-            .rollup(function(v) {
-                var custom_time_offset = _.get(v, '[0].custom_time_offset');
-                //rate per minute
-                return (v.length / timeInMilli[custom_time_offset]) * timeInMilli['sec'];
-                // return d3.mean(v, function(d) { return d.article_sentiment; }); 
-            })
-            .map(mentions);
-            console.log(intensityByCategory);
-        intensities = [];
-        Object.keys(intensityByCategory).forEach((el) => {
-            intensities.push({
-                'label': el,
-                'intensity': _.get(intensityByCategory, el+'.hour')
-            })
-        });
-        intensities.sort(function(a, b){return b.intensity-a.intensity});
-        yScale.domain(intensities.map((d) => {return d.label}));
-
+        // intensityByCategory = d3.nest()
+        //     .key((d) => {
+        //         return yValue(d);
+        //     })
+        //     .key((d) => {
+        //         return _.get(d, 'custom_time_offset'); //returns hour, day, week, etc.
+        //     })
+        //     .rollup(function(v) {
+        //         var custom_time_offset = _.get(v, '[0].custom_time_offset');
+        //         //rate per minute
+        //         return (v.length / timeInMilli[custom_time_offset]) * timeInMilli['sec'];
+        //         // return d3.mean(v, function(d) { return d.article_sentiment; }); 
+        //     })
+        //     .map(mentions);
+        //     console.log(intensityByCategory);
         //renderList([""]); //re-render view, removing all elements
 
         // mentionsByStory = d3.nest()
@@ -502,25 +489,25 @@ updateApp();
         //     //     // return d3.mean(v, function(d) { return d.article_sentiment; }); 
         //     // })
         //     .map(mentions);
-        updateViewportFromChart();
+        updateViewportFromChart(); //manily to set initial time brush
         renderList(mentions); //too mamy elements
         renderChart(mentions);
     }
     var force;
-
     function renderChart(mentions) {
+
         //FORCE layout
         force = d3.layout.force()
             .nodes(mentions)
             .size([innerWidth, innerheight])
-            .charge((d) => {return -1* Math.pow(d.radius, 2.0) / 8})
-            .chargeDistance(20)
-            // .gravity(0)
-            // .friction(0.3)
-            .on("tick", tick);
-        //             force.start();
-        // for (var i = 2; i > 0; --i) force.tick();
+            .charge(-1)
+            .gravity(0)
+            .on("tick", tick)
+        // force.start();
+        // for (var i = 20; i > 0; --i) force.tick();
         // force.stop();
+
+    
         var recentTime = d3.max(mentions, function(c){ 
             // console.log(timeFormat.parse(c.harvested_at));
             return timeFormat.parse(c.harvested_at);
@@ -541,6 +528,7 @@ updateApp();
         //"Energy,Finance,Capital Goods,Health Care,Consumer Non-Durables,Technology,Consumer Services,Basic Industries,Consumer Durables,Public Utilities,Miscellaneous,Transportation"
         // yScale.domain(Object.keys(intensityByCategory));
         // yScale.domain('Energy,Finance,Capital Goods,Health Care,Consumer Non-Durables,Technology,Consumer Services,Basic Industries,Consumer Durables,Public Utilities,Miscellaneous,Transportation'.split(','));
+        yScale.domain('Energy,Finance'.split(','));
 
         // var xAxisLabel = chart1.append("text")
         //     .attr("class", "axisLabel")
@@ -609,9 +597,9 @@ updateApp();
             .attr("cy", function(d, i) {
                 var yVal = yMap(d);
                 var yOffset = sentimentMap(d);
-                var rOffset = (sentimentValue(d) > 0) ? Math.random()*5 : -1*Math.random()*5;
-                return (!isNaN(yVal)) ? yVal - yOffset - rOffset: yVal; //isnan check avoids err due to points not mapped to sector
+                return (!isNaN(yVal)) ? yVal - yOffset: yVal; //isnan check avoids err due to points not mapped to sector
             })
+            // .attr("cy", (d) => {return d.y})
             .attr('fill', (d) => {
                 return (d.first_mention) ? 'blue' : 'black'; //special first mention
             }) //after
@@ -623,11 +611,11 @@ updateApp();
             selection.transition()
                 .duration(transitionDuration)
 				.ease("linear")
-                // .attr("cx", function(d, i) { 
+                // .attr("cx", function(d, i) {
                 //     var xTimeVal = xMap(d);
                 //     return (xTimeVal);
                 // })
-                 .attr("cx", (d) => {return d.x})
+                .attr("cx", (d) => {return d.x})
                 // .attr("fill", function(d, i) { return colorScale(d.event_summary['group']) })
 
             // currentTimeLine.transition().attr("d", function() {
@@ -743,14 +731,7 @@ updateApp();
       var lastTime;
       if (timeDomain == 'hour') {
           lastTime = new Date(recentTime.valueOf() - 60000 * 60 * 2 * 1);
-      }
-      else if (timeDomain == 'hour2') {
-          lastTime = new Date(recentTime.valueOf() - 60000 * 60 * 4 * 1);
-      }
-      else if (timeDomain == 'hour3') {
-          lastTime = new Date(recentTime.valueOf() - 60000 * 60 * 12 * 1);
-      }
-       else if (timeDomain == 'day') {
+      } else if (timeDomain == 'day') {
           lastTime = new Date(recentTime.valueOf() - 60000 * 60 * 24 * 1);
       } else { //week
           lastTime = new Date(recentTime.valueOf() - 60000 * 60 * 24 * 7);
@@ -768,7 +749,7 @@ updateApp();
   //Highlight the common story - right now effect is a red stroke.. should make it better..
   function highlight(article) {
     var story_id = _.get(article, 'story_id.$oid')
-    var story_sector = yValue(article);
+
     //Show another view for this story id.. via function call here!!!
 
 
@@ -779,11 +760,6 @@ updateApp();
             .style("stroke", "red")
             .style('stroke-width', '10')
           console.log('highlight called', story_id, selectedStory);
-
-    objects.selectAll(".dot")
-        // .style("opacity", function(d, i) { return opacityScale(d.event_impact_score['overall']) })
-        .filter((d) => {return yValue(d) != story_sector})
-            .style("opacity", "0.1")
 
     if (selectedStory && (story_id == selectedStory)) {
         //click action must show only mentions in list
@@ -816,8 +792,7 @@ updateApp();
         var story_id = _.get(article, 'story_id.$oid')     
         if (!selectedStory) {//un-click or no story is clicked mode
             objects.selectAll(".dot")
-                .style("stroke", undefined)
-                .style("opacity", function(d, i) { return opacityScale(d.event_impact_score['overall']) })
+                .style("stroke", undefined);
                 //show all stories again
             storyview.selectAll(".item")
                 .style("font-weight", 'normal')
@@ -864,7 +839,6 @@ updateApp();
     //     .style("display", 'block');
     }
 
-
 function tick(e) {
   for ( i = 0; i < mentions.length; i++ ) {
     var node = mentions[i];
@@ -875,8 +849,8 @@ function tick(e) {
      * but since this is a static force layout, we must perform it on the node.
      */
     // node.radius = 20;//node.idealradius - node.idealradius * e.alpha * 10;
-    // node = moveTowardDataPosition(.2 * e.alpha)(node);
-    node = collide(.5)(node);
+    node = moveTowardDataPosition(.2 * e.alpha)(node);
+    node = collide(.1)(node);
     node.cx = node.x;
     node.cy = node.y;
   }
@@ -891,10 +865,10 @@ function tick(e) {
 
   // Resolve collisions between nodes.
   function collide(alpha) {
-    var padding = 5;
+    var padding = 1;
     var quadtree = d3.geom.quadtree(mentions);
     return function(d) {
-      var r = d.radius + padding,
+      var r = d.radius + 200 + padding,
           nx1 = d.x - r,
           nx2 = d.x + r,
           ny1 = d.y - r,
@@ -934,6 +908,6 @@ function tick(e) {
       if (intersect) inside = !inside;
     }
     return inside;
-  }    
+  }
 </script>
 </html>
